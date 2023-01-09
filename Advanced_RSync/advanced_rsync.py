@@ -4,7 +4,11 @@ import shutil
 import time
 from ftplib import FTP
 import ftplib
+import tqdm
 
+my_dirs = []  # global
+my_files = []  # global
+curdir = ''  # global
 location1 = sys.argv[1]
 location2 = sys.argv[2]
 
@@ -255,6 +259,110 @@ def sync_zip_and_zip(folder1, folder2):
         time.sleep(1)
         continue_sync_zip_and_zip(folder1, folder2)
 
+def traverse(ftp, depth=0):
+    """
+    return a recursive listing of an ftp server contents (starting
+    from the current directory)
+
+    listing is returned as a recursive dictionary, where each key
+    contains a contents of the subdirectory or None if it corresponds
+    to a file.
+
+    @param ftp: ftplib.FTP object
+    """
+    if depth > 10:
+        return ['depth > 10']
+    level = {}
+    for entry in (path for path in ftp.nlst() if path not in ('.', '..')):
+        try:
+            ftp.cwd(entry)
+            level[entry] = traverse(ftp, depth+1)
+            ftp.cwd('..')
+        except ftplib.error_perm:
+            level[entry] = None
+    return level
+
+
+def get_dirs(ln):
+    global my_dirs
+    global my_files
+    cols = ln.split(' ')
+    objname = cols[len(cols) - 1]  # file or directory name
+    if ln.startswith('d'):
+        my_dirs.append(objname)
+    else:
+        if objname[-4] == ".":
+            my_files.append(os.path.join(curdir, objname))  # full path
+
+
+def check_dir(ftp, adir, dest_folder):
+    global my_dirs
+    global my_files  # let it accrue, then fetch them all later
+    global curdir
+    my_dirs = []
+    gotdirs = []  # local
+    curdir = ftp.pwd()
+    print("going to change to directory " + adir + " from " + curdir)
+    ftp.cwd(adir)
+    curdir = ftp.pwd()
+    path = os.path.join(dest_folder,curdir)
+    print(path)
+    print("now in directory: " + curdir)
+    ftp.retrlines('LIST', get_dirs)
+    gotdirs = my_dirs
+    print("found in " + adir + " directories:")
+    print(gotdirs)
+    print("Total files found so far: " + str(len(my_files)) + ".")
+    time.sleep(1)
+    for subdir in gotdirs:
+        my_dirs = []
+        check_dir(ftp, subdir, dest_folder)  # recurse
+
+    ftp.cwd('..')  # back up a directory when done here
+
+def deletedir_ftp(ftp, dirname):
+    ftp.cwd(dirname)
+    print(dirname)
+    for file in ftp.nlst():
+        try:
+            ftp.delete(file)
+        except Exception:
+            deletedir_ftp(ftp, file)
+    ftp.cwd("..")
+    ftp.rmd(dirname)
+
+def remove_all_from_ftp(ftp, folder):
+    ftp.cwd(folder)
+    for ftpfile in ftp.nlst():
+        try:
+            ftp.delete(ftpfile)
+        except Exception:
+            deletedir_ftp(ftp, ftpfile)
+
+def upload_all_to_ftp(ftp, path):
+    for name in os.listdir(path):
+        localpath = os.path.join(path, name)
+        if os.path.isfile(localpath):
+            print("STOR", name, localpath)
+            ftp.storbinary('STOR ' + name, open(localpath,'rb'))
+        elif os.path.isdir(localpath):
+            print("MKD", name)
+
+            try:
+                ftp.mkd(name)
+
+            # ignore "directory already exists"
+            except ftplib.error_perm as e:
+                if not e.args[0].startswith('550'):
+                    raise
+
+            print("CWD", name)
+            ftp.cwd(name)
+            upload_all_to_ftp(ftp, localpath)
+            print("CWD", "..")
+            ftp.cwd("..")
+
+
 def rsync(location1, location2):
     type1 = get_type_of_location(location1)
     type2 = get_type_of_location(location2)
@@ -290,21 +398,52 @@ def rsync(location1, location2):
         sync_zip_and_zip(folder1, folder2)
     elif type1 == "ftp":
         print(name1)
-    elif type2 == "ftp":
         print(name2)
-        username = name2.split(":")[0]
-        password = name2.split(":")[1].split("@")[0]
-        server = name2.split(":")[1].split("@")[1].split("/")[0]
-        folder_name = name2.split("/")[1]
+        username = name1.split(":")[0]
+        password = name1.split(":")[1].split("@")[0]
+        server = name1.split(":")[1].split("@")[1].split("/")[0]
+        folder_name = name1.split("/")[1]
         print("username: " + username)
         print("password: " + password)
         print("server: " + server)
         print("folder name: " + folder_name)
         try:
-            ftp_object = FTP(server)
-            ftp_object.login(username, password)
+            ftp = FTP(server)
+            print(ftp.login(username, password))
+
+            # ftp.retrlines('LIST')
+            # ftp.quit()
+            # parent_dir = ftp.pwd()
+            # ftp.cwd('{}/{}'.format(parent_dir, folder_name))
+            # files = ftp.nlst()
+            # for f in files:
+            #     print(f)
+            check_dir(ftp, folder_name, "D:\\TESTFTP")  # directory to start in
+            ftp.cwd('/.')  # change to root directory for downloading
+            for f in my_files:
+                print('getting ' + f)
+                file_name = f.replace('/', '\\')  # use path as filename prefix, with underscores
+                ftp.retrbinary('RETR ' + f, open("D:\\TESTFTP" + file_name, 'wb').write)
+                time.sleep(1)
         except ftplib.error_perm as error:
-            print (error)
+            print(error)
+    elif type2 == "ftp":
+        print(name2)
+        username = name2.split(":")[0]
+        password = name2.split(":")[1].split("@")[0]
+        server = name2.split(":")[1].split("@")[1].split("/")[0]
+        folder_name = "/" + name2.split("/")[1]
+        print("username: " + username)
+        print("password: " + password)
+        print("server: " + server)
+        print("folder name: " + folder_name)
+        try:
+            ftp = FTP(server)
+            print(ftp.login(username, password))
+            ftp.retrlines('LIST')
+            ftp.quit()
+        except ftplib.error_perm as error:
+            print(error)
     else:
         print("LOCATION TYPES UNAVAILABLE")
 
