@@ -2,6 +2,8 @@ import sys
 import os
 import shutil
 import time
+from ftplib import FTP
+import ftplib
 
 location1 = sys.argv[1]
 location2 = sys.argv[2]
@@ -286,6 +288,23 @@ def rsync(location1, location2):
         prepare_zip_file(zip2, folder2)
         print("Synchronizing zip " + zip1 + " and zip " + zip2)
         sync_zip_and_zip(folder1, folder2)
+    elif type1 == "ftp":
+        print(name1)
+    elif type2 == "ftp":
+        print(name2)
+        username = name2.split(":")[0]
+        password = name2.split(":")[1].split("@")[0]
+        server = name2.split(":")[1].split("@")[1].split("/")[0]
+        folder_name = name2.split("/")[1]
+        print("username: " + username)
+        print("password: " + password)
+        print("server: " + server)
+        print("folder name: " + folder_name)
+        try:
+            ftp_object = FTP(server)
+            ftp_object.login(username, password)
+        except ftplib.error_perm as error:
+            print (error)
     else:
         print("LOCATION TYPES UNAVAILABLE")
 
