@@ -114,30 +114,59 @@ def delete_folders(rootDir1, rootDir2): #this function will delete all deleted f
             print("Directory " + str(fullPath2) + " deleted from" + str(rootDir2))
             continue
 
-def continue_sync(path1,path2):
-    list_for_path1 = generate_list(path1)
-    list_for_path2 = generate_list(path2)
-    time.sleep(1)
-    list_for_path1_second = generate_list(path1)
-    list_for_path2_second = generate_list(path2)
+def delete_files(rootDir1, rootDir2, list_for_path1, list_for_path2): #this function will delete all files that are deleted from one path to another
+    list_for_path1_second = generate_list(rootDir1)
+    list_for_path2_second = generate_list(rootDir2)
     print(list_for_path1)
     print(list_for_path1_second)
-    time.sleep(1)
     print(list_for_path2)
     print(list_for_path2_second)
-    if len(list_for_path1_second) > len(list_for_path2_second) and len(list_for_path1) == len(list_for_path2):
+    if len(list_for_path1_second) > len(list_for_path2_second):
         print("list1>list2")
-        delete_folders(path2,path1)
+        for file, time in list_for_path1:
+            formed_file = file.replace(rootDir1, rootDir2)
+            ok = 0
+            for file1, time1 in list_for_path2:
+                if formed_file == file1:
+                    ok = 1
+            if ok == 0:
+                os.remove(file)
+                print("File " + file + " deleted from " + rootDir1)
+                break
     else:
         print("list2>list1")
-        syncDirs(path1,path2)
-        syncFiles(path1,path2)
-        #delete_folders(path1,path2)
+        for file, time in list_for_path2:
+            formed_file = file.replace(rootDir2, rootDir1)
+            ok = 0
+            for file1, time1 in list_for_path1:
+                if formed_file == file1:
+                    ok = 1
+            if ok == 0:
+                os.remove(file)
+                print("File " + file + " deleted from " + rootDir2)
+                break
+
+def continue_sync_folders(folder1,folder2):
+    list_for_path1 = generate_list(folder1)
+    list_for_path2 = generate_list(folder2)
+    time.sleep(1)
+    list_for_path1_second = generate_list(folder1)
+    list_for_path2_second = generate_list(folder2)
+    print(list_for_path1)
+    print(list_for_path1_second)
+    print(list_for_path2)
+    print(list_for_path2_second)
+    if len(list_for_path1) == len(list_for_path2) and len(list_for_path1_second) == len(list_for_path2_second) or len(list_for_path1_second) > len(list_for_path1) or len(list_for_path2_second) > len(list_for_path2):
+        print("needs sync")
+        syncDirs(folder1, folder2)
+        syncFiles(folder1, folder2)
+    else:
+        print("needs modification")
+        delete_files(folder1, folder2,list_for_path1_second, list_for_path2_second)
 
 def continue_sync_folder_and_zip(folder,zip_folder):
     list_for_path1 = generate_list(folder)
     list_for_path2 = generate_list(zip_folder)
-    time.sleep(2) #waits 2 seconds to let the script run and get all the files okay
     list_for_path1_second = generate_list(folder)
     list_for_path2_second = generate_list(zip_folder)
     print(list_for_path1)
@@ -145,14 +174,14 @@ def continue_sync_folder_and_zip(folder,zip_folder):
     time.sleep(2)
     print(list_for_path2)
     print(list_for_path2_second)
-    if len(list_for_path1_second) > len(list_for_path2_second) and len(list_for_path1) == len(list_for_path2):
-        print("list1>list2")
-        delete_folders(zip_folder, folder)
-    else:
-        print("list2>list1")
+    if len(list_for_path1) == len(list_for_path2) and len(list_for_path1_second) == len(list_for_path2_second) or len(
+            list_for_path1_second) > len(list_for_path1) or len(list_for_path2_second) > len(list_for_path2):
+        print("needs sync")
         syncDirs(folder, zip_folder)
         syncFiles(folder, zip_folder)
-        # delete_folders(path1,path2)
+    else:
+        print("needs modification")
+        delete_files(folder, zip_folder, list_for_path1_second, list_for_path2_second)
     zip_file = zip_folder + ".zip"
     os.remove(zip_file)
     shutil.make_archive(zip_folder, "zip", zip_folder)
@@ -168,14 +197,14 @@ def continue_sync_zip_and_zip(folder1, folder2):
     time.sleep(2)
     print(list_for_path2)
     print(list_for_path2_second)
-    if len(list_for_path1_second) > len(list_for_path2_second) and len(list_for_path1) == len(list_for_path2):
-        print("list1>list2")
-        delete_folders(folder2, folder1)
-    else:
-        print("list2>list1")
+    if len(list_for_path1) == len(list_for_path2) and len(list_for_path1_second) == len(list_for_path2_second) or len(
+            list_for_path1_second) > len(list_for_path1) or len(list_for_path2_second) > len(list_for_path2):
+        print("needs sync")
         syncDirs(folder1, folder2)
         syncFiles(folder1, folder2)
-        # delete_folders(path1,path2)
+    else:
+        print("needs modification")
+        delete_files(folder1, folder2, list_for_path1_second, list_for_path2_second)
     zip_file1 = folder1 + ".zip"
     os.remove(zip_file1)
     shutil.make_archive(folder1, "zip", folder1)
@@ -197,7 +226,7 @@ def sync_folders(path1,path2):
     print("First sync done, proceeding with sync of files")
     while 1:
         time.sleep(1)
-        continue_sync(path1,path2)
+        continue_sync_folders(path1,path2)
 
 def sync_folder_and_zip(folder,zip_folder):
     print("Doing initial sync...")
