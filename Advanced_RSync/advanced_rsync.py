@@ -259,29 +259,41 @@ def sync_zip_and_zip(folder1, folder2):
         time.sleep(1)
         continue_sync_zip_and_zip(folder1, folder2)
 
-def traverse(ftp, depth=0):
-    """
-    return a recursive listing of an ftp server contents (starting
-    from the current directory)
 
-    listing is returned as a recursive dictionary, where each key
-    contains a contents of the subdirectory or None if it corresponds
-    to a file.
+def continue_sync_folder_and_ftp(ftp, ftp_folder_name, ftp_local_path, folder_path):
+    list_for_path1 = generate_list(ftp_local_path)
+    list_for_path2 = generate_list(folder_path)
+    list_for_path1_second = generate_list(ftp_local_path)
+    list_for_path2_second = generate_list(folder_path)
+    print(list_for_path1)
+    print(list_for_path1_second)
+    time.sleep(2)
+    print(list_for_path2)
+    print(list_for_path2_second)
+    if len(list_for_path1) == len(list_for_path2) and len(list_for_path1_second) == len(list_for_path2_second) or len(
+            list_for_path1_second) > len(list_for_path1) or len(list_for_path2_second) > len(list_for_path2):
+        print("needs sync")
+        syncDirs(ftp_local_path, folder_path)
+        syncFiles(ftp_local_path, folder_path)
+    else:
+        print("needs modification")
+        delete_files(ftp_local_path, folder_path, list_for_path1_second, list_for_path2_second)
+    print("DELETING ALL FROM FTP...")
+    remove_all_from_ftp(ftp,ftp_folder_name)
+    print("UPLOADING ALL TO FTP...")
+    ftp.mkd(ftp_folder_name)
+    ftp.cwd(ftp_folder_name)
+    upload_all_to_ftp(ftp,ftp_local_path)
+    ftp.cwd("..")
 
-    @param ftp: ftplib.FTP object
-    """
-    if depth > 10:
-        return ['depth > 10']
-    level = {}
-    for entry in (path for path in ftp.nlst() if path not in ('.', '..')):
-        try:
-            ftp.cwd(entry)
-            level[entry] = traverse(ftp, depth+1)
-            ftp.cwd('..')
-        except ftplib.error_perm:
-            level[entry] = None
-    return level
 
+def sync_folder_and_ftp(ftp,ftp_folder_name,ftp_local_path,folder_path):
+    print("Doing initial sync...")
+    initial_step(ftp_local_path,folder_path)
+    print("First sync done, proceeding with sync of files")
+    while 1:
+        time.sleep(1)
+        continue_sync_folder_and_ftp(ftp,ftp_folder_name,ftp_local_path,folder_path)
 
 def get_dirs(ln):
     global my_dirs
@@ -294,7 +306,6 @@ def get_dirs(ln):
         if objname[-4] == ".":
             my_files.append(os.path.join(curdir, objname))  # full path
 
-
 def check_dir(ftp, adir, dest_folder):
     global my_dirs
     global my_files  # let it accrue, then fetch them all later
@@ -302,17 +313,22 @@ def check_dir(ftp, adir, dest_folder):
     my_dirs = []
     gotdirs = []  # local
     curdir = ftp.pwd()
-    print("going to change to directory " + adir + " from " + curdir)
+    #print("going to change to directory " + adir + " from " + curdir)
     ftp.cwd(adir)
     curdir = ftp.pwd()
     path = os.path.join(dest_folder,curdir)
-    print(path)
-    print("now in directory: " + curdir)
+    #print(path)
+    if not os.path.exists(path):
+        os.mkdir(path)
+    else:
+        shutil.rmtree(path)
+        os.mkdir(path)
+    #print("now in directory: " + curdir)
     ftp.retrlines('LIST', get_dirs)
     gotdirs = my_dirs
-    print("found in " + adir + " directories:")
-    print(gotdirs)
-    print("Total files found so far: " + str(len(my_files)) + ".")
+    #print("found in " + adir + " directories:")
+    #(gotdirs)
+    #print("Total files found so far: " + str(len(my_files)) + ".")
     time.sleep(1)
     for subdir in gotdirs:
         my_dirs = []
@@ -320,24 +336,15 @@ def check_dir(ftp, adir, dest_folder):
 
     ftp.cwd('..')  # back up a directory when done here
 
-def deletedir_ftp(ftp, dirname):
-    ftp.cwd(dirname)
-    print(dirname)
-    for file in ftp.nlst():
-        try:
-            ftp.delete(file)
-        except Exception:
-            deletedir_ftp(ftp, file)
-    ftp.cwd("..")
-    ftp.rmd(dirname)
-
-def remove_all_from_ftp(ftp, folder):
-    ftp.cwd(folder)
-    for ftpfile in ftp.nlst():
-        try:
-            ftp.delete(ftpfile)
-        except Exception:
-            deletedir_ftp(ftp, ftpfile)
+def remove_all_from_ftp(ftp, folder_name_ftp):
+    for (name, properties) in ftp.mlsd(path=folder_name_ftp):
+        if name in ['.', '..']:
+            continue
+        elif properties['type'] == 'file':
+            ftp.delete(f"{folder_name_ftp}/{name}")
+        elif properties['type'] == 'dir':
+            remove_all_from_ftp(ftp, f"{folder_name_ftp}/{name}")
+    ftp.rmd(folder_name_ftp)
 
 def upload_all_to_ftp(ftp, path):
     for name in os.listdir(path):
@@ -397,34 +404,30 @@ def rsync(location1, location2):
         print("Synchronizing zip " + zip1 + " and zip " + zip2)
         sync_zip_and_zip(folder1, folder2)
     elif type1 == "ftp":
-        print(name1)
-        print(name2)
         username = name1.split(":")[0]
         password = name1.split(":")[1].split("@")[0]
         server = name1.split(":")[1].split("@")[1].split("/")[0]
         folder_name = name1.split("/")[1]
-        print("username: " + username)
-        print("password: " + password)
-        print("server: " + server)
-        print("folder name: " + folder_name)
+        # print("username: " + username)
+        # print("password: " + password)
+        # print("server: " + server)
+        # print("folder name: " + folder_name)
         try:
             ftp = FTP(server)
-            print(ftp.login(username, password))
-
-            # ftp.retrlines('LIST')
-            # ftp.quit()
-            # parent_dir = ftp.pwd()
-            # ftp.cwd('{}/{}'.format(parent_dir, folder_name))
-            # files = ftp.nlst()
-            # for f in files:
-            #     print(f)
+            ftp.login(username, password)
             check_dir(ftp, folder_name, "D:\\TESTFTP")  # directory to start in
             ftp.cwd('/.')  # change to root directory for downloading
+            print("Getting all files from ftp into a local path...")
             for f in my_files:
-                print('getting ' + f)
+                #print('getting ' + f)
                 file_name = f.replace('/', '\\')  # use path as filename prefix, with underscores
-                ftp.retrbinary('RETR ' + f, open("D:\\TESTFTP" + file_name, 'wb').write)
+                ftp.retrbinary('RETR ' + f, open("D:" + file_name, 'wb').write)
                 time.sleep(1)
+            print("DONE")
+            if type2 == "folder":
+                localpath = "D:\\" + folder_name
+                print("Synchronizing ftp " + name1 + " and folder " + name2)
+                sync_folder_and_ftp(ftp,folder_name,localpath,name2)
         except ftplib.error_perm as error:
             print(error)
     elif type2 == "ftp":
